@@ -149,7 +149,12 @@ function renderAdd() {
 
       <div class="card">
         <label>Sous-catégorie</label>
-        <input type="text" id="__sub" placeholder="Écrire ou choisir ci-dessous…" value="${sub.replace(/"/g, "&quot;")}" />
+        <input type="text" id="__sub" list="__subList" placeholder="Écrire ou choisir ci-dessous…" value="${sub.replace(/"/g, "&quot;")}" autocomplete="off" />
+        <datalist id="__subList">
+          ${computeSuggestions("")
+            .map((s) => `<option value="${s.replace(/"/g, "&quot;")}"></option>`)
+            .join("")}
+        </datalist>
         <div class="chips" id="__chips">
           ${suggestions
             .map(
@@ -294,15 +299,6 @@ function attachChipListeners() {
 }
 
 function handleSubInput() {
-  const sub = document.getElementById("__sub").value;
-  const suggestions = computeSuggestions(sub);
-  const chips = document.getElementById("__chips");
-  if (chips) {
-    chips.innerHTML = suggestions
-      .map((s) => `<button class="chip ${s === sub ? "selected" : ""}" data-sub="${s.replace(/"/g, "&quot;")}">${s}</button>`)
-      .join("");
-    attachChipListeners();
-  }
   updateSaveButtonState();
 }
 
