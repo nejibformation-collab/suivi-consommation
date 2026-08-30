@@ -122,6 +122,12 @@ function renderAdd() {
   const sub = document.getElementById("__sub")?.value ?? "";
   const date = document.getElementById("__date")?.value ?? todayISO();
 
+  // Remember which field was focused (and cursor position) so we can restore it after re-render
+  const activeEl = document.activeElement;
+  const activeId = activeEl && activeEl.id && activeEl.id.startsWith("__") ? activeEl.id : null;
+  const selStart = activeEl && "selectionStart" in activeEl ? activeEl.selectionStart : null;
+  const selEnd = activeEl && "selectionEnd" in activeEl ? activeEl.selectionEnd : null;
+
   const suggestions = (() => {
     const counts = {};
     entries.filter((e) => e.category === state.category).forEach((e) => {
@@ -249,6 +255,19 @@ function renderAdd() {
   );
   document.getElementById("__sub").addEventListener("input", () => renderAdd());
   document.getElementById("__value").addEventListener("input", () => renderAdd());
+
+  // Restore focus/cursor so the keyboard stays open while typing
+  if (activeId) {
+    const el = document.getElementById(activeId);
+    if (el) {
+      el.focus();
+      if (selStart !== null && selEnd !== null && typeof el.setSelectionRange === "function") {
+        try {
+          el.setSelectionRange(selStart, selEnd);
+        } catch (e) {}
+      }
+    }
+  }
 
   document.getElementById("__save")?.addEventListener("click", () => {
     const subVal = document.getElementById("__sub").value.trim();
