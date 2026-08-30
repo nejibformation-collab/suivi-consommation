@@ -492,7 +492,7 @@ function renderStats() {
         <button class="${state.statView === "month" ? "active" : ""}" data-view="month">Mensuelle</button>
       </div>
 
-      <div class="card">
+      <div class="card card-total-current">
         <p class="total-label">${state.statView === "week" ? "Cette semaine" : "Ce mois-ci"} · Total actuel (réparti)</p>
         <p class="total-value disp">${fmt(currentTotal)}</p>
         <div class="legend">
@@ -506,7 +506,7 @@ function renderStats() {
         </div>
       </div>
 
-      <div class="card total-raw-card">
+      <div class="card card-total-raw">
         <p class="total-label">${state.statView === "week" ? "Cette semaine" : "Ce mois-ci"} · Total sans répartition</p>
         <p class="total-value disp">${fmt(rawTotal)}</p>
         <p class="total-sub-hint">Équipement compté en une fois, à sa date d'achat</p>
@@ -521,7 +521,7 @@ function renderStats() {
         </div>
       </div>
 
-      <div class="card">
+      <div class="card card-chart">
         <p class="chart-title">${state.statView === "week" ? "8 dernières semaines" : "6 derniers mois"} · réparti</p>
         ${renderChartSVG(chartData)}
       </div>
