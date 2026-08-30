@@ -116,28 +116,24 @@ function render() {
   else renderStats();
 }
 
+function computeSuggestions(sub) {
+  const counts = {};
+  entries.filter((e) => e.category === state.category).forEach((e) => {
+    counts[e.subcategory] = (counts[e.subcategory] || 0) + 1;
+  });
+  return Object.keys(counts)
+    .sort((a, b) => counts[b] - counts[a])
+    .filter((s) => s.toLowerCase().includes(sub.toLowerCase()))
+    .slice(0, 6);
+}
+
 function renderAdd() {
   const view = document.getElementById("view");
   const val = document.getElementById("__value")?.value ?? "";
   const sub = document.getElementById("__sub")?.value ?? "";
   const date = document.getElementById("__date")?.value ?? todayISO();
 
-  // Remember which field was focused (and cursor position) so we can restore it after re-render
-  const activeEl = document.activeElement;
-  const activeId = activeEl && activeEl.id && activeEl.id.startsWith("__") ? activeEl.id : null;
-  const selStart = activeEl && "selectionStart" in activeEl ? activeEl.selectionStart : null;
-  const selEnd = activeEl && "selectionEnd" in activeEl ? activeEl.selectionEnd : null;
-
-  const suggestions = (() => {
-    const counts = {};
-    entries.filter((e) => e.category === state.category).forEach((e) => {
-      counts[e.subcategory] = (counts[e.subcategory] || 0) + 1;
-    });
-    return Object.keys(counts)
-      .sort((a, b) => counts[b] - counts[a])
-      .filter((s) => s.toLowerCase().includes(sub.toLowerCase()))
-      .slice(0, 6);
-  })();
+  const suggestions = computeSuggestions(sub);
 
   view.innerHTML = `
     <div class="view">
@@ -154,7 +150,7 @@ function renderAdd() {
       <div class="card">
         <label>Sous-catégorie</label>
         <input type="text" id="__sub" placeholder="Écrire ou choisir ci-dessous…" value="${sub.replace(/"/g, "&quot;")}" />
-        <div class="chips">
+        <div class="chips" id="__chips">
           ${suggestions
             .map(
               (s) => `<button class="chip ${s === sub ? "selected" : ""}" data-sub="${s.replace(/"/g, "&quot;")}">${s}</button>`
@@ -189,8 +185,8 @@ function renderAdd() {
         </div>
         ${
           val && !isNaN(parseFloat(val))
-            ? `<p class="equip-hint">≈ ${fmt(parseFloat(val) / state.months)} / mois pendant ${state.months} mois</p>`
-            : ""
+            ? `<p class="equip-hint" id="__equipHint">≈ ${fmt(parseFloat(val) / state.months)} / mois pendant ${state.months} mois</p>`
+            : `<p class="equip-hint" id="__equipHint"></p>`
         }
       </div>`
           : ""
@@ -241,33 +237,15 @@ function renderAdd() {
       renderAdd();
     })
   );
-  document.querySelectorAll(".chip").forEach((b) =>
-    b.addEventListener("click", () => {
-      document.getElementById("__sub").value = b.dataset.sub;
-      renderAdd();
-    })
-  );
+  attachChipListeners();
   document.querySelectorAll(".month-btn").forEach((b) =>
     b.addEventListener("click", () => {
       state.months = parseInt(b.dataset.months, 10);
       renderAdd();
     })
   );
-  document.getElementById("__sub").addEventListener("input", () => renderAdd());
-  document.getElementById("__value").addEventListener("input", () => renderAdd());
-
-  // Restore focus/cursor so the keyboard stays open while typing
-  if (activeId) {
-    const el = document.getElementById(activeId);
-    if (el) {
-      el.focus();
-      if (selStart !== null && selEnd !== null && typeof el.setSelectionRange === "function") {
-        try {
-          el.setSelectionRange(selStart, selEnd);
-        } catch (e) {}
-      }
-    }
-  }
+  document.getElementById("__sub").addEventListener("input", handleSubInput);
+  document.getElementById("__value").addEventListener("input", handleValueInput);
 
   document.getElementById("__save")?.addEventListener("click", () => {
     const subVal = document.getElementById("__sub").value.trim();
@@ -294,6 +272,50 @@ function renderAdd() {
     })
   );
 }
+
+function updateSaveButtonState() {
+  const sub = document.getElementById("__sub")?.value.trim() || "";
+  const val = document.getElementById("__value")?.value || "";
+  const btn = document.getElementById("__save");
+  if (!btn) return;
+  const ready = !!(sub && val);
+  btn.classList.toggle("ready", ready);
+  btn.disabled = !ready;
+}
+
+function attachChipListeners() {
+  document.querySelectorAll(".chip").forEach((b) =>
+    b.addEventListener("click", () => {
+      const subInput = document.getElementById("__sub");
+      subInput.value = b.dataset.sub;
+      handleSubInput();
+    })
+  );
+}
+
+function handleSubInput() {
+  const sub = document.getElementById("__sub").value;
+  const suggestions = computeSuggestions(sub);
+  const chips = document.getElementById("__chips");
+  if (chips) {
+    chips.innerHTML = suggestions
+      .map((s) => `<button class="chip ${s === sub ? "selected" : ""}" data-sub="${s.replace(/"/g, "&quot;")}">${s}</button>`)
+      .join("");
+    attachChipListeners();
+  }
+  updateSaveButtonState();
+}
+
+function handleValueInput() {
+  const val = document.getElementById("__value").value;
+  const hint = document.getElementById("__equipHint");
+  if (hint) {
+    hint.textContent =
+      val && !isNaN(parseFloat(val)) ? `≈ ${fmt(parseFloat(val) / state.months)} / mois pendant ${state.months} mois` : "";
+  }
+  updateSaveButtonState();
+}
+
 
 function computeBuckets() {
   const daily = entries.flatMap((e) => dailyContributions(e).map((d) => ({ ...d, category: e.category })));
