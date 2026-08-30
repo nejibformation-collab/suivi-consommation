@@ -17,6 +17,7 @@ let state = {
   category: "Famille",
   months: 3,
   statView: "month",
+  editingId: null,
 };
 
 // ---------- Date helpers ----------
@@ -85,6 +86,13 @@ function dailyContributions(entry) {
 function fmt(n) {
   return new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 2 }).format(n || 0) + " DT";
 }
+function escapeHtml(s) {
+  return String(s)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
 function save() {
   localStorage.setItem("entries", JSON.stringify(entries));
 }
@@ -132,6 +140,7 @@ function renderAdd() {
   const val = document.getElementById("__value")?.value ?? "";
   const sub = document.getElementById("__sub")?.value ?? "";
   const date = document.getElementById("__date")?.value ?? todayISO();
+  const detail = document.getElementById("__detail")?.value ?? "";
 
   const suggestions = computeSuggestions(sub);
 
@@ -178,6 +187,11 @@ function renderAdd() {
         </div>
       </div>
 
+      <div class="card">
+        <label>Détail (optionnel)</label>
+        <input type="text" id="__detail" placeholder="Ex: facture EDF de janvier" value="${detail.replace(/"/g, "&quot;")}" />
+      </div>
+
       ${
         state.category === "Equipement"
           ? `
@@ -212,20 +226,39 @@ function renderAdd() {
           .slice(0, 12)
           .map(
             (e) => `
-          <div class="entry">
-            <div class="entry-left">
-              <div class="dot" style="background:${CATS[e.category].color}"></div>
-              <div>
-                <div class="entry-sub">${e.subcategory}</div>
-                <div class="entry-meta">${e.date}${e.category === "Equipement" ? " · " + e.months + " mois" : ""}</div>
+          <div class="entry-wrap">
+            <div class="entry">
+              <div class="entry-left">
+                <div class="dot" style="background:${CATS[e.category].color}"></div>
+                <div>
+                  <div class="entry-sub">${escapeHtml(e.subcategory)}</div>
+                  <div class="entry-meta">${e.date}${e.category === "Equipement" ? " · " + e.months + " mois" : ""}</div>
+                </div>
+              </div>
+              <div class="entry-right">
+                <span class="entry-val disp">${fmt(e.value)}</span>
+                <button class="edit-btn" data-edit="${e.id}">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#93A4AD" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 013 3L7 19l-4 1 1-4z"/></svg>
+                </button>
+                <button class="del-btn" data-del="${e.id}">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#93A4AD" stroke-width="2"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/></svg>
+                </button>
               </div>
             </div>
-            <div class="entry-right">
-              <span class="entry-val disp">${fmt(e.value)}</span>
-              <button class="del-btn" data-del="${e.id}">
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#93A4AD" stroke-width="2"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/></svg>
-              </button>
-            </div>
+            ${
+              state.editingId === e.id
+                ? `
+            <div class="entry-edit">
+              <input type="text" class="detail-edit-input" id="__editDetail_${e.id}" value="${escapeHtml(e.detail || "")}" placeholder="Ajouter un détail…" />
+              <div class="entry-edit-actions">
+                <button class="edit-save-btn" data-save-detail="${e.id}">Enregistrer</button>
+                <button class="edit-cancel-btn" data-cancel-detail="${e.id}">Annuler</button>
+              </div>
+            </div>`
+                : e.detail
+                ? `<div class="entry-detail">${escapeHtml(e.detail)}</div>`
+                : ""
+            }
           </div>`
           )
           .join("")}
@@ -256,6 +289,7 @@ function renderAdd() {
     const subVal = document.getElementById("__sub").value.trim();
     const valNum = parseFloat(document.getElementById("__value").value);
     const dateVal = document.getElementById("__date").value || todayISO();
+    const detailVal = document.getElementById("__detail").value.trim();
     if (!subVal || isNaN(valNum) || valNum <= 0) return;
     entries.unshift({
       id: Date.now() + "-" + Math.random().toString(36).slice(2, 7),
@@ -263,9 +297,13 @@ function renderAdd() {
       subcategory: subVal,
       value: valNum,
       date: dateVal,
+      detail: detailVal,
       ...(state.category === "Equipement" ? { months: state.months } : {}),
     });
     save();
+    document.getElementById("__sub").value = "";
+    document.getElementById("__value").value = "";
+    document.getElementById("__detail").value = "";
     renderAdd();
   });
 
@@ -273,6 +311,35 @@ function renderAdd() {
     b.addEventListener("click", () => {
       entries = entries.filter((e) => e.id !== b.dataset.del);
       save();
+      renderAdd();
+    })
+  );
+
+  document.querySelectorAll("[data-edit]").forEach((b) =>
+    b.addEventListener("click", () => {
+      state.editingId = b.dataset.edit;
+      renderAdd();
+      const inp = document.getElementById("__editDetail_" + state.editingId);
+      if (inp) {
+        inp.focus();
+        inp.setSelectionRange(inp.value.length, inp.value.length);
+      }
+    })
+  );
+  document.querySelectorAll("[data-save-detail]").forEach((b) =>
+    b.addEventListener("click", () => {
+      const id = b.dataset.saveDetail;
+      const inp = document.getElementById("__editDetail_" + id);
+      const entry = entries.find((e) => e.id === id);
+      if (entry && inp) entry.detail = inp.value.trim();
+      state.editingId = null;
+      save();
+      renderAdd();
+    })
+  );
+  document.querySelectorAll("[data-cancel-detail]").forEach((b) =>
+    b.addEventListener("click", () => {
+      state.editingId = null;
       renderAdd();
     })
   );
