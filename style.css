@@ -45,6 +45,8 @@ header h1{ font-size: 22px; font-weight:700; letter-spacing:-0.01em; margin:0; }
   cursor:pointer;
 }
 .tabbtn.active{ background: var(--surface-2); color: var(--text); border-color: var(--line); }
+.tab-icon{ display:flex; width:16px; height:16px; }
+.tab-icon svg{ width:16px; height:16px; }
 
 .view{ display:flex; flex-direction:column; gap:16px; }
 .hidden{ display:none !important; }
@@ -53,12 +55,13 @@ header h1{ font-size: 22px; font-weight:700; letter-spacing:-0.01em; margin:0; }
 .cat-btn{
   flex:1; display:flex; flex-direction:column; align-items:center; gap:6px;
   padding: 12px 0; border-radius: 12px; background: var(--surface); border: 1px solid var(--line);
-  cursor:pointer; color: var(--text-muted); font-size:12px; font-weight:600;
+  cursor:pointer; font-size:12px; font-weight:600;
 }
 .cat-btn svg{ width:18px; height:18px; }
-.cat-btn.active[data-cat="Famille"]{ background: var(--famille-soft); border-color: var(--famille); color: var(--famille); }
-.cat-btn.active[data-cat="Equipement"]{ background: var(--equipement-soft); border-color: var(--equipement); color: var(--equipement); }
-.cat-btn.active[data-cat="Nejib"]{ background: var(--nejib-soft); border-color: var(--nejib); color: var(--nejib); }
+.cat-btn .cat-label{ transition: color .15s ease; }
+.cat-btn.active[data-cat="Famille"]{ background: var(--famille-soft); border-color: var(--famille); }
+.cat-btn.active[data-cat="Equipement"]{ background: var(--equipement-soft); border-color: var(--equipement); }
+.cat-btn.active[data-cat="Nejib"]{ background: var(--nejib-soft); border-color: var(--nejib); }
 
 .card{ background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 16px; }
 .card label{ font-size:12px; color: var(--text-muted); display:block; margin-bottom:6px; }
@@ -144,6 +147,8 @@ header h1{ font-size: 22px; font-weight:700; letter-spacing:-0.01em; margin:0; }
 
 .total-label{ font-size:12px; color: var(--text-muted); }
 .total-value{ font-family: var(--font-display); font-size:30px; font-weight:700; margin-top:4px; }
+.total-raw-card{ border-color: #3d4a52; }
+.total-sub-hint{ font-size:11px; color: var(--text-muted); opacity:0.75; margin-top:2px; }
 .legend{ display:flex; gap:16px; margin-top:12px; flex-wrap:wrap; }
 .legend-item{ display:flex; align-items:center; gap:6px; font-size:11.5px; color: var(--text-muted); }
 

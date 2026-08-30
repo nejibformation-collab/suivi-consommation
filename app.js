@@ -10,6 +10,13 @@ const ICONS = {
   Equipement: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z"/></svg>',
   Nejib: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21v-1a8 8 0 0116 0v1"/></svg>',
 };
+// Distinct accent colors for the top tabs — chosen to stand apart from the
+// dark app background AND from the category colors above, so they never blend in.
+const TAB_COLORS = { add: "#6FA8DC", stats: "#C58FE0" };
+const TAB_ICONS = {
+  add: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>',
+  stats: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><rect x="7" y="12" width="3" height="6"/><rect x="12" y="8" width="3" height="10"/><rect x="17" y="5" width="3" height="13"/></svg>',
+};
 
 let entries = JSON.parse(localStorage.getItem("entries") || "[]");
 let state = {
@@ -108,8 +115,14 @@ function render() {
         <div class="stitch"></div>
       </header>
       <div class="tabs">
-        <button class="tabbtn ${state.tab === "add" ? "active" : ""}" data-tab="add">Ajouter</button>
-        <button class="tabbtn ${state.tab === "stats" ? "active" : ""}" data-tab="stats">Statistiques</button>
+        <button class="tabbtn ${state.tab === "add" ? "active" : ""}" data-tab="add">
+          <span class="tab-icon" style="color:${TAB_COLORS.add}">${TAB_ICONS.add}</span>
+          Ajouter
+        </button>
+        <button class="tabbtn ${state.tab === "stats" ? "active" : ""}" data-tab="stats">
+          <span class="tab-icon" style="color:${TAB_COLORS.stats}">${TAB_ICONS.stats}</span>
+          Statistiques
+        </button>
       </div>
       <div id="view"></div>
     </div>
@@ -150,8 +163,8 @@ function renderAdd() {
         ${CAT_KEYS.map(
           (k) => `
           <button class="cat-btn ${state.category === k ? "active" : ""}" data-cat="${k}">
-            ${ICONS[k]}
-            <span>${CATS[k].label}</span>
+            <span style="color:${CATS[k].color}">${ICONS[k]}</span>
+            <span class="cat-label" style="color:${state.category === k ? CATS[k].color : "var(--text-muted)"}">${CATS[k].label}</span>
           </button>`
         ).join("")}
       </div>
@@ -401,6 +414,29 @@ function computeBuckets() {
   return { weekBuckets, monthBuckets };
 }
 
+// Same as computeBuckets, but Equipement entries are NOT spread across
+// months — the full value is counted on its actual purchase date.
+function computeRawBuckets() {
+  const raw = entries.map((e) => ({ date: e.date, amount: e.value, category: e.category }));
+  const weeks = lastNWeeks(8);
+  const wmap = Object.fromEntries(weeks.map((w) => [w, { Famille: 0, Equipement: 0, Nejib: 0 }]));
+  raw.forEach((d) => {
+    const wk = getMonday(d.date);
+    if (wmap[wk]) wmap[wk][d.category] += d.amount;
+  });
+  const weekBuckets = weeks.map((w) => ({ key: w, label: weekLabel(w), ...wmap[w] }));
+
+  const months = lastNMonths(6);
+  const mmap = Object.fromEntries(months.map((m) => [m, { Famille: 0, Equipement: 0, Nejib: 0 }]));
+  raw.forEach((d) => {
+    const mk = d.date.slice(0, 7);
+    if (mmap[mk]) mmap[mk][d.category] += d.amount;
+  });
+  const monthBuckets = months.map((m) => ({ key: m, label: monthLabel(m), ...mmap[m] }));
+
+  return { weekBuckets, monthBuckets };
+}
+
 function renderChartSVG(data) {
   const w = 320, h = 200, padL = 30, padB = 20, padT = 10, padR = 6;
   const chartW = w - padL - padR, chartH = h - padT - padB;
@@ -438,9 +474,16 @@ function renderChartSVG(data) {
 function renderStats() {
   const view = document.getElementById("view");
   const { weekBuckets, monthBuckets } = computeBuckets();
+  const { weekBuckets: rawWeekBuckets, monthBuckets: rawMonthBuckets } = computeRawBuckets();
+
   const chartData = state.statView === "week" ? weekBuckets : monthBuckets;
+  const rawChartData = state.statView === "week" ? rawWeekBuckets : rawMonthBuckets;
+
   const current = chartData[chartData.length - 1] || { Famille: 0, Equipement: 0, Nejib: 0 };
   const currentTotal = (current.Famille || 0) + (current.Equipement || 0) + (current.Nejib || 0);
+
+  const rawCurrent = rawChartData[rawChartData.length - 1] || { Famille: 0, Equipement: 0, Nejib: 0 };
+  const rawTotal = (rawCurrent.Famille || 0) + (rawCurrent.Equipement || 0) + (rawCurrent.Nejib || 0);
 
   view.innerHTML = `
     <div class="view">
@@ -450,7 +493,7 @@ function renderStats() {
       </div>
 
       <div class="card">
-        <p class="total-label">${state.statView === "week" ? "Cette semaine" : "Ce mois-ci"}</p>
+        <p class="total-label">${state.statView === "week" ? "Cette semaine" : "Ce mois-ci"} · Total actuel (réparti)</p>
         <p class="total-value disp">${fmt(currentTotal)}</p>
         <div class="legend">
           ${CAT_KEYS.map(
@@ -463,8 +506,23 @@ function renderStats() {
         </div>
       </div>
 
+      <div class="card total-raw-card">
+        <p class="total-label">${state.statView === "week" ? "Cette semaine" : "Ce mois-ci"} · Total sans répartition</p>
+        <p class="total-value disp">${fmt(rawTotal)}</p>
+        <p class="total-sub-hint">Équipement compté en une fois, à sa date d'achat</p>
+        <div class="legend">
+          ${CAT_KEYS.map(
+            (k) => `
+            <div class="legend-item">
+              <div class="dot" style="width:7px;height:7px;background:${CATS[k].color}"></div>
+              ${CATS[k].label} · ${fmt(rawCurrent[k])}
+            </div>`
+          ).join("")}
+        </div>
+      </div>
+
       <div class="card">
-        <p class="chart-title">${state.statView === "week" ? "8 dernières semaines" : "6 derniers mois"}</p>
+        <p class="chart-title">${state.statView === "week" ? "8 dernières semaines" : "6 derniers mois"} · réparti</p>
         ${renderChartSVG(chartData)}
       </div>
 
