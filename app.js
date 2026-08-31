@@ -66,14 +66,24 @@ function lastNMonths(n) {
   }
   return arr;
 }
+function isoWeekInfo(dateStr) {
+  const d = new Date(dateStr + "T00:00:00");
+  const dayNum = (d.getDay() + 6) % 7; // Monday = 0
+  d.setDate(d.getDate() - dayNum + 3); // move to Thursday of this ISO week
+  const isoYear = d.getFullYear();
+  const firstThursday = new Date(isoYear, 0, 4);
+  const firstDayNum = (firstThursday.getDay() + 6) % 7;
+  firstThursday.setDate(firstThursday.getDate() - firstDayNum + 3);
+  const week = 1 + Math.round((d - firstThursday) / (7 * 86400000));
+  return { week, isoYear };
+}
 function weekLabel(mondayISO) {
-  const d = new Date(mondayISO + "T00:00:00");
-  return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}`;
+  const { week, isoYear } = isoWeekInfo(mondayISO);
+  return `${pad(week)}/${String(isoYear).slice(2)}`;
 }
 function monthLabel(monthKey) {
   const [y, m] = monthKey.split("-");
-  const noms = ["Jan", "Fév", "Mar", "Avr", "Mai", "Jui", "Jul", "Aoû", "Sep", "Oct", "Nov", "Déc"];
-  return noms[parseInt(m, 10) - 1] + " " + y.slice(2);
+  return `${m}/${y.slice(2)}`;
 }
 function dailyContributions(entry) {
   if (entry.category !== "Equipement") return [{ date: entry.date, amount: entry.value }];
