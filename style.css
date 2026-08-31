@@ -102,6 +102,7 @@ header h1{ font-size: 22px; font-weight:700; letter-spacing:-0.01em; margin:0; }
 .save-btn.ready{ background: var(--famille); color:#182229; }
 .save-btn.ready[data-cat="Equipement"]{ background: var(--equipement); }
 .save-btn.ready[data-cat="Nejib"]{ background: var(--nejib); }
+.save-btn.just-saved{ background: #5FBF77 !important; color:#12211F !important; }
 
 .recent-title{ font-size:14px; font-weight:600; color: var(--text-muted); margin: 6px 0 4px; }
 .entry-wrap{ margin-bottom:8px; }

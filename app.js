@@ -318,6 +318,19 @@ function renderAdd() {
     document.getElementById("__value").value = "";
     document.getElementById("__detail").value = "";
     renderAdd();
+    window.scrollTo({ top: 0, behavior: "smooth" });
+    const savedBtn = document.getElementById("__save");
+    if (savedBtn) {
+      savedBtn.textContent = "✓ Enregistré";
+      savedBtn.classList.add("just-saved");
+      setTimeout(() => {
+        const btn = document.getElementById("__save");
+        if (btn && btn.classList.contains("just-saved")) {
+          btn.textContent = "Enregistrer";
+          btn.classList.remove("just-saved");
+        }
+      }, 1200);
+    }
   });
 
   document.querySelectorAll("[data-del]").forEach((b) =>
