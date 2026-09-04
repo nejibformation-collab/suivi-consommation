@@ -3,12 +3,17 @@ const CATS = {
   Famille: { color: "#E0784F", label: "Famille" },
   Equipement: { color: "#4FA39D", label: "Équipement" },
   Nejib: { color: "#D4A24C", label: "Nejib" },
+  Voiture: { color: "#5B8DBE", label: "Voiture" },
 };
-const CAT_KEYS = ["Famille", "Equipement", "Nejib"];
+const CAT_KEYS = ["Famille", "Equipement", "Nejib", "Voiture"];
+// Categories whose value gets spread (répartie) over 3/6/12 months instead
+// of counted all at once on the entry date.
+const DISTRIBUTED_CATS = new Set(["Equipement", "Voiture"]);
 const ICONS = {
   Famille: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12l9-9 9 9"/><path d="M5 10v10h14V10"/></svg>',
   Equipement: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z"/></svg>',
   Nejib: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21v-1a8 8 0 0116 0v1"/></svg>',
+  Voiture: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 17h14M5 17a2 2 0 01-2-2v-2l2-5a2 2 0 012-2h6a2 2 0 012 2l2 5v2a2 2 0 01-2 2M5 17a2 2 0 002 2h0a2 2 0 002-2M17 17a2 2 0 002 2h0a2 2 0 002-2M5 13h14"/></svg>',
 };
 // Distinct accent colors for the top tabs — chosen to stand apart from the
 // dark app background AND from the category colors above, so they never blend in.
@@ -86,7 +91,7 @@ function monthLabel(monthKey) {
   return `${m}/${y.slice(2)}`;
 }
 function dailyContributions(entry) {
-  if (entry.category !== "Equipement") return [{ date: entry.date, amount: entry.value }];
+  if (!DISTRIBUTED_CATS.has(entry.category)) return [{ date: entry.date, amount: entry.value }];
   const months = entry.months || 3;
   const start = new Date(entry.date + "T00:00:00");
   const end = addMonths(entry.date, months);
@@ -112,6 +117,14 @@ function escapeHtml(s) {
 }
 function save() {
   localStorage.setItem("entries", JSON.stringify(entries));
+}
+function emptyCatBucket() {
+  const o = {};
+  CAT_KEYS.forEach((k) => (o[k] = 0));
+  return o;
+}
+function sumCatBucket(bucket) {
+  return CAT_KEYS.reduce((sum, k) => sum + (bucket[k] || 0), 0);
 }
 
 // ---------- Rendering ----------
@@ -216,13 +229,18 @@ function renderAdd() {
       </div>
 
       ${
-        state.category === "Equipement"
+        DISTRIBUTED_CATS.has(state.category)
           ? `
-      <div class="card equip-card">
-        <label>Répartir la valeur sur</label>
+      <div class="card dist-card" style="background:${CATS[state.category].color}18; border-color:${CATS[state.category].color}">
+        <label style="color:${CATS[state.category].color}">Répartir la valeur sur</label>
         <div class="months-row">
           ${[3, 6, 12]
-            .map((m) => `<button class="month-btn ${state.months === m ? "active" : ""}" data-months="${m}">${m} mois</button>`)
+            .map(
+              (m) =>
+                `<button class="month-btn ${state.months === m ? "active" : ""}" data-months="${m}" style="${
+                  state.months === m ? `background:${CATS[state.category].color};color:#12211F` : ""
+                }">${m} mois</button>`
+            )
             .join("")}
         </div>
         ${
@@ -255,7 +273,7 @@ function renderAdd() {
                 <div class="dot" style="background:${CATS[e.category].color}"></div>
                 <div>
                   <div class="entry-sub">${escapeHtml(e.subcategory)}</div>
-                  <div class="entry-meta">${e.date}${e.category === "Equipement" ? " · " + e.months + " mois" : ""}</div>
+                  <div class="entry-meta">${e.date}${DISTRIBUTED_CATS.has(e.category) ? " · " + e.months + " mois" : ""}</div>
                 </div>
               </div>
               <div class="entry-right">
@@ -321,7 +339,7 @@ function renderAdd() {
       value: valNum,
       date: dateVal,
       detail: detailVal,
-      ...(state.category === "Equipement" ? { months: state.months } : {}),
+      ...(DISTRIBUTED_CATS.has(state.category) ? { months: state.months } : {}),
     });
     save();
     document.getElementById("__sub").value = "";
@@ -419,7 +437,7 @@ function handleValueInput() {
 function computeBuckets() {
   const daily = entries.flatMap((e) => dailyContributions(e).map((d) => ({ ...d, category: e.category })));
   const weeks = lastNWeeks(8);
-  const wmap = Object.fromEntries(weeks.map((w) => [w, { Famille: 0, Equipement: 0, Nejib: 0 }]));
+  const wmap = Object.fromEntries(weeks.map((w) => [w, emptyCatBucket()]));
   daily.forEach((d) => {
     const wk = getMonday(d.date);
     if (wmap[wk]) wmap[wk][d.category] += d.amount;
@@ -427,7 +445,7 @@ function computeBuckets() {
   const weekBuckets = weeks.map((w) => ({ key: w, label: weekLabel(w), ...wmap[w] }));
 
   const months = lastNMonths(6);
-  const mmap = Object.fromEntries(months.map((m) => [m, { Famille: 0, Equipement: 0, Nejib: 0 }]));
+  const mmap = Object.fromEntries(months.map((m) => [m, emptyCatBucket()]));
   daily.forEach((d) => {
     const mk = d.date.slice(0, 7);
     if (mmap[mk]) mmap[mk][d.category] += d.amount;
@@ -437,12 +455,12 @@ function computeBuckets() {
   return { weekBuckets, monthBuckets };
 }
 
-// Same as computeBuckets, but Equipement entries are NOT spread across
-// months — the full value is counted on its actual purchase date.
+// Same as computeBuckets, but distributed-category entries are NOT spread
+// across months — the full value is counted on its actual purchase date.
 function computeRawBuckets() {
   const raw = entries.map((e) => ({ date: e.date, amount: e.value, category: e.category }));
   const weeks = lastNWeeks(8);
-  const wmap = Object.fromEntries(weeks.map((w) => [w, { Famille: 0, Equipement: 0, Nejib: 0 }]));
+  const wmap = Object.fromEntries(weeks.map((w) => [w, emptyCatBucket()]));
   raw.forEach((d) => {
     const wk = getMonday(d.date);
     if (wmap[wk]) wmap[wk][d.category] += d.amount;
@@ -450,7 +468,7 @@ function computeRawBuckets() {
   const weekBuckets = weeks.map((w) => ({ key: w, label: weekLabel(w), ...wmap[w] }));
 
   const months = lastNMonths(6);
-  const mmap = Object.fromEntries(months.map((m) => [m, { Famille: 0, Equipement: 0, Nejib: 0 }]));
+  const mmap = Object.fromEntries(months.map((m) => [m, emptyCatBucket()]));
   raw.forEach((d) => {
     const mk = d.date.slice(0, 7);
     if (mmap[mk]) mmap[mk][d.category] += d.amount;
@@ -463,7 +481,7 @@ function computeRawBuckets() {
 function renderChartSVG(data) {
   const w = 320, h = 200, padL = 30, padB = 20, padT = 10, padR = 6;
   const chartW = w - padL - padR, chartH = h - padT - padB;
-  const maxVal = Math.max(1, ...data.map((d) => d.Famille + d.Equipement + d.Nejib));
+  const maxVal = Math.max(1, ...data.map((d) => sumCatBucket(d)));
   const barW = (chartW / data.length) * 0.55;
   const gap = (chartW / data.length) * 0.45;
 
@@ -481,7 +499,7 @@ function renderChartSVG(data) {
   data.forEach((d, i) => {
     const x = padL + i * (barW + gap) + gap / 2;
     let yCursor = padT + chartH;
-    ["Famille", "Equipement", "Nejib"].forEach((cat) => {
+    CAT_KEYS.forEach((cat) => {
       const val = d[cat] || 0;
       const barH = (val / maxVal) * chartH;
       const y = yCursor - barH;
@@ -502,11 +520,11 @@ function renderStats() {
   const chartData = state.statView === "week" ? weekBuckets : monthBuckets;
   const rawChartData = state.statView === "week" ? rawWeekBuckets : rawMonthBuckets;
 
-  const current = chartData[chartData.length - 1] || { Famille: 0, Equipement: 0, Nejib: 0 };
-  const currentTotal = (current.Famille || 0) + (current.Equipement || 0) + (current.Nejib || 0);
+  const current = chartData[chartData.length - 1] || emptyCatBucket();
+  const currentTotal = sumCatBucket(current);
 
-  const rawCurrent = rawChartData[rawChartData.length - 1] || { Famille: 0, Equipement: 0, Nejib: 0 };
-  const rawTotal = (rawCurrent.Famille || 0) + (rawCurrent.Equipement || 0) + (rawCurrent.Nejib || 0);
+  const rawCurrent = rawChartData[rawChartData.length - 1] || emptyCatBucket();
+  const rawTotal = sumCatBucket(rawCurrent);
 
   view.innerHTML = `
     <div class="view">
@@ -532,7 +550,7 @@ function renderStats() {
       <div class="card card-total-raw">
         <p class="total-label">${state.statView === "week" ? "Cette semaine" : "Ce mois-ci"} · Total sans répartition</p>
         <p class="total-value disp">${fmt(rawTotal)}</p>
-        <p class="total-sub-hint">Équipement compté en une fois, à sa date d'achat</p>
+        <p class="total-sub-hint">Équipement et Voiture comptés en une fois, à leur date d'achat</p>
         <div class="legend">
           ${CAT_KEYS.map(
             (k) => `
