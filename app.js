@@ -134,7 +134,18 @@ function render() {
   root.innerHTML = `
     <div class="app">
       <header>
-        <h1 class="disp">Suivi de consommation</h1>
+        <div class="header-row">
+          <h1 class="disp">Suivi de consommation</h1>
+          <div class="backup-btns">
+            <button id="__exportBtn" title="Exporter les données">
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#93A4AD" stroke-width="2"><path d="M12 3v12"/><path d="M7 8l5-5 5 5"/><path d="M4 17v3a2 2 0 002 2h12a2 2 0 002-2v-3"/></svg>
+            </button>
+            <button id="__importBtn" title="Importer les données">
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#93A4AD" stroke-width="2"><path d="M12 15V3"/><path d="M7 10l5 5 5-5"/><path d="M4 17v3a2 2 0 002 2h12a2 2 0 002-2v-3"/></svg>
+            </button>
+            <input type="file" id="__importFile" accept="application/json" style="display:none" />
+          </div>
+        </div>
         <div class="stitch"></div>
       </header>
       <div class="tabs">
@@ -156,8 +167,55 @@ function render() {
       render();
     })
   );
+  document.getElementById("__exportBtn").addEventListener("click", exportData);
+  document.getElementById("__importBtn").addEventListener("click", () => {
+    document.getElementById("__importFile").click();
+  });
+  document.getElementById("__importFile").addEventListener("change", (e) => {
+    const file = e.target.files[0];
+    if (file) importData(file);
+  });
   if (state.tab === "add") renderAdd();
   else renderStats();
+}
+
+function exportData() {
+  const blob = new Blob([JSON.stringify(entries, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  const stamp = todayISO();
+  a.href = url;
+  a.download = `suivi-consommation-${stamp}.json`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function importData(file) {
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const imported = JSON.parse(reader.result);
+      if (!Array.isArray(imported)) throw new Error("format invalide");
+      const replace = confirm(
+        `Importer ${imported.length} entrée(s).\nOK = remplacer toutes les données actuelles\nAnnuler = ajouter aux données existantes`
+      );
+      if (replace) {
+        entries = imported;
+      } else {
+        const existingIds = new Set(entries.map((e) => e.id));
+        const merged = imported.filter((e) => !existingIds.has(e.id));
+        entries = [...merged, ...entries];
+      }
+      save();
+      render();
+      alert("Importation réussie ✓");
+    } catch (err) {
+      alert("Fichier invalide, impossible d'importer.");
+    }
+  };
+  reader.readAsText(file);
 }
 
 function computeSuggestions(sub) {

@@ -33,6 +33,12 @@ body{
 .app{ max-width: 480px; margin: 0 auto; padding: 24px 20px 40px; }
 
 header h1{ font-size: 22px; font-weight:700; letter-spacing:-0.01em; margin:0; }
+.header-row{ display:flex; align-items:center; justify-content:space-between; gap:12px; }
+.backup-btns{ display:flex; gap:10px; flex-shrink:0; }
+.backup-btns button{
+  background: var(--surface); border:1px solid var(--line); border-radius:8px;
+  width:34px; height:34px; display:flex; align-items:center; justify-content:center; cursor:pointer;
+}
 .stitch{
   margin-top: 12px;
   height: 1px;
