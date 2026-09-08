@@ -17,19 +17,38 @@ const ICONS = {
 };
 // Distinct accent colors for the top tabs — chosen to stand apart from the
 // dark app background AND from the category colors above, so they never blend in.
-const TAB_COLORS = { add: "#6FA8DC", stats: "#C58FE0" };
+const TAB_COLORS = { add: "#6FA8DC", stats: "#C58FE0", entretien: "#6FBF73" };
 const TAB_ICONS = {
   add: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>',
   stats: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><rect x="7" y="12" width="3" height="6"/><rect x="12" y="8" width="3" height="10"/><rect x="17" y="5" width="3" height="13"/></svg>',
+  entretien: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>',
 };
+// Common car maintenance types offered as suggestions even before any history exists.
+const DEFAULT_ENTRETIEN_TYPES = [
+  "Vidange huile moteur",
+  "Filtre à huile",
+  "Filtre à air",
+  "Filtre habitacle",
+  "Plaquettes de frein",
+  "Disques de frein",
+  "Pneus",
+  "Batterie",
+  "Bougies",
+  "Courroie de distribution",
+  "Liquide de refroidissement",
+  "Révision générale",
+  "Contrôle technique",
+];
 
 let entries = JSON.parse(localStorage.getItem("entries") || "[]");
+let entretiens = JSON.parse(localStorage.getItem("entretiens") || "[]");
 let state = {
   tab: "add",
   category: "Famille",
   months: 3,
   statView: "month",
   editingId: null,
+  editingEntretienId: null,
 };
 
 // ---------- Date helpers ----------
@@ -118,6 +137,9 @@ function escapeHtml(s) {
 function save() {
   localStorage.setItem("entries", JSON.stringify(entries));
 }
+function saveEntretiens() {
+  localStorage.setItem("entretiens", JSON.stringify(entretiens));
+}
 function emptyCatBucket() {
   const o = {};
   CAT_KEYS.forEach((k) => (o[k] = 0));
@@ -157,6 +179,10 @@ function render() {
           <span class="tab-icon" style="color:${TAB_COLORS.stats}">${TAB_ICONS.stats}</span>
           Statistiques
         </button>
+        <button class="tabbtn ${state.tab === "entretien" ? "active" : ""}" data-tab="entretien">
+          <span class="tab-icon" style="color:${TAB_COLORS.entretien}">${TAB_ICONS.entretien}</span>
+          Entretien
+        </button>
       </div>
       <div id="view"></div>
     </div>
@@ -176,11 +202,13 @@ function render() {
     if (file) importData(file);
   });
   if (state.tab === "add") renderAdd();
-  else renderStats();
+  else if (state.tab === "stats") renderStats();
+  else renderEntretien();
 }
 
 function exportData() {
-  const blob = new Blob([JSON.stringify(entries, null, 2)], { type: "application/json" });
+  const payload = { entries, entretiens };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   const stamp = todayISO();
@@ -196,19 +224,25 @@ function importData(file) {
   const reader = new FileReader();
   reader.onload = () => {
     try {
-      const imported = JSON.parse(reader.result);
-      if (!Array.isArray(imported)) throw new Error("format invalide");
+      const parsed = JSON.parse(reader.result);
+      // Support both the new {entries, entretiens} format and old exports
+      // that were just a plain array of entries.
+      const importedEntries = Array.isArray(parsed) ? parsed : Array.isArray(parsed.entries) ? parsed.entries : [];
+      const importedEntretiens = Array.isArray(parsed.entretiens) ? parsed.entretiens : [];
       const replace = confirm(
-        `Importer ${imported.length} entrée(s).\nOK = remplacer toutes les données actuelles\nAnnuler = ajouter aux données existantes`
+        `Importer ${importedEntries.length} entrée(s) et ${importedEntretiens.length} entretien(s).\nOK = remplacer toutes les données actuelles\nAnnuler = ajouter aux données existantes`
       );
       if (replace) {
-        entries = imported;
+        entries = importedEntries;
+        entretiens = importedEntretiens;
       } else {
         const existingIds = new Set(entries.map((e) => e.id));
-        const merged = imported.filter((e) => !existingIds.has(e.id));
-        entries = [...merged, ...entries];
+        entries = [...importedEntries.filter((e) => !existingIds.has(e.id)), ...entries];
+        const existingEntretienIds = new Set(entretiens.map((e) => e.id));
+        entretiens = [...importedEntretiens.filter((e) => !existingEntretienIds.has(e.id)), ...entretiens];
       }
       save();
+      saveEntretiens();
       render();
       alert("Importation réussie ✓");
     } catch (err) {
@@ -633,6 +667,218 @@ function renderStats() {
     b.addEventListener("click", () => {
       state.statView = b.dataset.view;
       renderStats();
+    })
+  );
+}
+
+// ---------- Entretien voiture (car maintenance) ----------
+function computeEntretienTypeOptions() {
+  const used = [...new Set(entretiens.map((e) => e.type))];
+  const combined = [...used, ...DEFAULT_ENTRETIEN_TYPES.filter((t) => !used.includes(t))];
+  return combined;
+}
+
+function daysFromToday(dateStr) {
+  const d = new Date(dateStr + "T00:00:00");
+  const t = new Date(todayISO() + "T00:00:00");
+  return Math.round((d - t) / 86400000);
+}
+
+function renderEntretien() {
+  const view = document.getElementById("view");
+  const type = document.getElementById("__etype")?.value ?? "";
+  const date = document.getElementById("__edate")?.value ?? todayISO();
+  const km = document.getElementById("__ekm")?.value ?? "";
+  const nextDate = document.getElementById("__enextDate")?.value ?? "";
+  const nextKm = document.getElementById("__enextKm")?.value ?? "";
+  const detail = document.getElementById("__edetail")?.value ?? "";
+
+  const typeOptions = computeEntretienTypeOptions();
+
+  const sorted = [...entretiens].sort((a, b) => (a.date < b.date ? 1 : -1));
+
+  view.innerHTML = `
+    <div class="view">
+      <div class="card">
+        <label>Type d'entretien</label>
+        <input type="text" id="__etype" list="__etypeList" placeholder="Écrire ou choisir…" value="${escapeHtml(type)}" autocomplete="off" />
+        <datalist id="__etypeList">
+          ${typeOptions.map((t) => `<option value="${escapeHtml(t)}"></option>`).join("")}
+        </datalist>
+      </div>
+
+      <div class="row2">
+        <div class="card">
+          <label>Date</label>
+          <input type="date" id="__edate" value="${date}" />
+        </div>
+        <div class="card">
+          <label>Kilométrage (optionnel)</label>
+          <input type="number" inputmode="numeric" id="__ekm" placeholder="Ex: 45000" value="${km}" />
+        </div>
+      </div>
+
+      <div class="card entretien-next-card">
+        <label>Prochain entretien prévu (optionnel)</label>
+        <div class="row2" style="margin-top:8px">
+          <div class="card" style="background:transparent;border:none;padding:0">
+            <label>À la date du</label>
+            <input type="date" id="__enextDate" value="${nextDate}" />
+          </div>
+          <div class="card" style="background:transparent;border:none;padding:0">
+            <label>Ou au kilométrage</label>
+            <input type="number" inputmode="numeric" id="__enextKm" placeholder="Ex: 50000" value="${nextKm}" />
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <label>Détail (optionnel)</label>
+        <input type="text" id="__edetail" placeholder="Ex: Total Quartz 5W30, garage Ben Ali" value="${escapeHtml(detail)}" />
+      </div>
+
+      <button class="save-btn ${type.trim() ? "ready" : ""}" id="__esave" ${type.trim() ? "" : "disabled"} style="${
+    type.trim() ? `background:${TAB_COLORS.entretien};color:#12211F` : ""
+  }">
+        Enregistrer
+      </button>
+
+      ${
+        sorted.length
+          ? `
+      <div>
+        <p class="recent-title disp">Historique</p>
+        ${sorted
+          .map((e) => {
+            const dueSoon = e.nextDate && daysFromToday(e.nextDate) <= 30;
+            const overdue = e.nextDate && daysFromToday(e.nextDate) < 0;
+            return `
+          <div class="entry-wrap">
+            <div class="entry ${dueSoon ? "entretien-due" : ""}">
+              <div class="entry-left">
+                <div class="dot" style="background:${TAB_COLORS.entretien}"></div>
+                <div>
+                  <div class="entry-sub">${escapeHtml(e.type)}</div>
+                  <div class="entry-meta">${e.date}${e.km ? " · " + Number(e.km).toLocaleString("fr-FR") + " km" : ""}</div>
+                </div>
+              </div>
+              <div class="entry-right">
+                <button class="edit-btn" data-eedit="${e.id}">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#93A4AD" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 013 3L7 19l-4 1 1-4z"/></svg>
+                </button>
+                <button class="del-btn" data-edel="${e.id}">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#93A4AD" stroke-width="2"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/></svg>
+                </button>
+              </div>
+            </div>
+            ${
+              state.editingEntretienId === e.id
+                ? `
+            <div class="entry-edit">
+              <input type="text" id="__editEType_${e.id}" placeholder="Type" value="${escapeHtml(e.type || "")}" />
+              <input type="date" id="__editEDate_${e.id}" value="${e.date || ""}" />
+              <input type="number" id="__editEKm_${e.id}" placeholder="Kilométrage" value="${e.km || ""}" />
+              <input type="date" id="__editENextDate_${e.id}" value="${e.nextDate || ""}" />
+              <input type="number" id="__editENextKm_${e.id}" placeholder="Prochain km" value="${e.nextKm || ""}" />
+              <input type="text" id="__editEDetail_${e.id}" placeholder="Détail" value="${escapeHtml(e.detail || "")}" />
+              <div class="entry-edit-actions">
+                <button class="edit-save-btn" data-esave="${e.id}">Enregistrer</button>
+                <button class="edit-cancel-btn" data-ecancel="${e.id}">Annuler</button>
+              </div>
+            </div>`
+                : `
+            <div class="entry-detail entretien-info ${overdue ? "overdue" : dueSoon ? "due-soon" : ""}">
+              ${e.nextDate ? `Prochain : ${e.nextDate}${overdue ? " (dépassé)" : dueSoon ? " (bientôt)" : ""}` : ""}
+              ${e.nextDate && e.nextKm ? " · " : ""}
+              ${e.nextKm ? `${Number(e.nextKm).toLocaleString("fr-FR")} km` : ""}
+              ${e.detail ? `<br/>${escapeHtml(e.detail)}` : ""}
+            </div>`
+            }
+          </div>`;
+          })
+          .join("")}
+      </div>`
+          : `<p class="empty-msg">Aucun entretien enregistré. Ajoute la première vidange, changement de pneus, etc.</p>`
+      }
+    </div>
+  `;
+
+  document.getElementById("__esave")?.addEventListener("click", () => {
+    const typeVal = document.getElementById("__etype").value.trim();
+    if (!typeVal) return;
+    entretiens.unshift({
+      id: Date.now() + "-" + Math.random().toString(36).slice(2, 7),
+      type: typeVal,
+      date: document.getElementById("__edate").value || todayISO(),
+      km: document.getElementById("__ekm").value || "",
+      nextDate: document.getElementById("__enextDate").value || "",
+      nextKm: document.getElementById("__enextKm").value || "",
+      detail: document.getElementById("__edetail").value.trim(),
+    });
+    saveEntretiens();
+    document.getElementById("__etype").value = "";
+    document.getElementById("__ekm").value = "";
+    document.getElementById("__enextDate").value = "";
+    document.getElementById("__enextKm").value = "";
+    document.getElementById("__edetail").value = "";
+    renderEntretien();
+    window.scrollTo({ top: 0, behavior: "smooth" });
+    const btn = document.getElementById("__esave");
+    if (btn) {
+      btn.textContent = "✓ Enregistré";
+      btn.style.background = "#5FBF77";
+      btn.style.color = "#12211F";
+      setTimeout(() => {
+        const b2 = document.getElementById("__esave");
+        if (b2) renderEntretien();
+      }, 1000);
+    }
+  });
+
+  document.getElementById("__etype")?.addEventListener("input", () => {
+    const btn = document.getElementById("__esave");
+    if (!btn) return;
+    const ready = !!document.getElementById("__etype").value.trim();
+    btn.disabled = !ready;
+    btn.classList.toggle("ready", ready);
+    btn.style.background = ready ? TAB_COLORS.entretien : "";
+    btn.style.color = ready ? "#12211F" : "";
+  });
+
+  document.querySelectorAll("[data-edel]").forEach((b) =>
+    b.addEventListener("click", () => {
+      entretiens = entretiens.filter((e) => e.id !== b.dataset.edel);
+      saveEntretiens();
+      renderEntretien();
+    })
+  );
+  document.querySelectorAll("[data-eedit]").forEach((b) =>
+    b.addEventListener("click", () => {
+      state.editingEntretienId = b.dataset.eedit;
+      renderEntretien();
+    })
+  );
+  document.querySelectorAll("[data-ecancel]").forEach((b) =>
+    b.addEventListener("click", () => {
+      state.editingEntretienId = null;
+      renderEntretien();
+    })
+  );
+  document.querySelectorAll("[data-esave]").forEach((b) =>
+    b.addEventListener("click", () => {
+      const id = b.dataset.esave;
+      const ent = entretiens.find((e) => e.id === id);
+      if (ent) {
+        ent.type = document.getElementById("__editEType_" + id).value.trim() || ent.type;
+        ent.date = document.getElementById("__editEDate_" + id).value || ent.date;
+        ent.km = document.getElementById("__editEKm_" + id).value || "";
+        ent.nextDate = document.getElementById("__editENextDate_" + id).value || "";
+        ent.nextKm = document.getElementById("__editENextKm_" + id).value || "";
+        ent.detail = document.getElementById("__editEDetail_" + id).value.trim();
+      }
+      state.editingEntretienId = null;
+      saveEntretiens();
+      renderEntretien();
     })
   );
 }
