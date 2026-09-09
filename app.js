@@ -17,11 +17,12 @@ const ICONS = {
 };
 // Distinct accent colors for the top tabs — chosen to stand apart from the
 // dark app background AND from the category colors above, so they never blend in.
-const TAB_COLORS = { add: "#6FA8DC", stats: "#C58FE0", entretien: "#6FBF73" };
+const TAB_COLORS = { add: "#6FA8DC", stats: "#C58FE0", entretien: "#6FBF73", reglages: "#B0B0B0" };
 const TAB_ICONS = {
   add: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>',
   stats: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><rect x="7" y="12" width="3" height="6"/><rect x="12" y="8" width="3" height="10"/><rect x="17" y="5" width="3" height="13"/></svg>',
   entretien: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>',
+  reglages: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>',
 };
 // Common car maintenance types offered as suggestions even before any history exists.
 const DEFAULT_ENTRETIEN_TYPES = [
@@ -42,6 +43,7 @@ const DEFAULT_ENTRETIEN_TYPES = [
 
 let entries = JSON.parse(localStorage.getItem("entries") || "[]");
 let entretiens = JSON.parse(localStorage.getItem("entretiens") || "[]");
+let syncStatus = "";
 let state = {
   tab: "add",
   category: "Famille",
@@ -136,10 +138,96 @@ function escapeHtml(s) {
 }
 function save() {
   localStorage.setItem("entries", JSON.stringify(entries));
+  pushToSupabase(true);
 }
 function saveEntretiens() {
   localStorage.setItem("entretiens", JSON.stringify(entretiens));
+  pushToSupabase(true);
 }
+
+// ---------- Supabase cloud sync ----------
+function getSbConfig() {
+  try {
+    return JSON.parse(localStorage.getItem("sb_config") || "null");
+  } catch (e) {
+    return null;
+  }
+}
+function saveSbConfig(cfg) {
+  localStorage.setItem("sb_config", JSON.stringify(cfg));
+}
+
+function pushToSupabase(auto) {
+  const cfg = getSbConfig();
+  if (!cfg || !cfg.url || !cfg.key || !cfg.identifiant) return;
+  fetch(`${cfg.url.replace(/\/$/, "")}/rest/v1/consumption_data?on_conflict=identifiant`, {
+    method: "POST",
+    headers: {
+      apikey: cfg.key,
+      Authorization: `Bearer ${cfg.key}`,
+      "Content-Type": "application/json",
+      Prefer: "resolution=merge-duplicates,return=minimal",
+    },
+    body: JSON.stringify([
+      { identifiant: cfg.identifiant, entries, entretiens, updated_at: new Date().toISOString() },
+    ]),
+  })
+    .then((res) => {
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      syncStatus = "Dernière sauvegarde cloud : " + new Date().toLocaleTimeString("fr-FR");
+      if (state.tab === "reglages") renderReglages();
+    })
+    .catch((err) => {
+      syncStatus = "Erreur de sauvegarde cloud : " + err.message;
+      if (state.tab === "reglages") renderReglages();
+    });
+}
+
+function pullFromSupabase(silent) {
+  const cfg = getSbConfig();
+  if (!cfg || !cfg.url || !cfg.key || !cfg.identifiant) {
+    if (!silent) alert("Configure d'abord tes réglages Supabase.");
+    return;
+  }
+  fetch(
+    `${cfg.url.replace(/\/$/, "")}/rest/v1/consumption_data?identifiant=eq.${encodeURIComponent(cfg.identifiant)}&select=*`,
+    { headers: { apikey: cfg.key, Authorization: `Bearer ${cfg.key}` } }
+  )
+    .then((res) => {
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      return res.json();
+    })
+    .then((rows) => {
+      if (!rows.length) {
+        syncStatus = "Aucune donnée trouvée sur Supabase pour cet identifiant.";
+        if (!silent) alert(syncStatus);
+        if (state.tab === "reglages") renderReglages();
+        return;
+      }
+      const row = rows[0];
+      const doIt = silent
+        ? true
+        : confirm(
+            `Récupérer ${row.entries?.length || 0} entrée(s) et ${
+              row.entretiens?.length || 0
+            } entretien(s) depuis Supabase ?\nCela remplacera les données actuelles sur ce téléphone.`
+          );
+      if (!doIt) return;
+      entries = row.entries || [];
+      entretiens = row.entretiens || [];
+      localStorage.setItem("entries", JSON.stringify(entries));
+      localStorage.setItem("entretiens", JSON.stringify(entretiens));
+      syncStatus = "Données récupérées depuis Supabase ✓";
+      render();
+      if (!silent) alert("Récupération réussie ✓");
+    })
+    .catch((err) => {
+      syncStatus = "Erreur de récupération : " + err.message;
+      if (!silent) alert(syncStatus);
+      if (state.tab === "reglages") renderReglages();
+    });
+}
+
 function emptyCatBucket() {
   const o = {};
   CAT_KEYS.forEach((k) => (o[k] = 0));
@@ -183,6 +271,10 @@ function render() {
           <span class="tab-icon" style="color:${TAB_COLORS.entretien}">${TAB_ICONS.entretien}</span>
           Entretien
         </button>
+        <button class="tabbtn ${state.tab === "reglages" ? "active" : ""}" data-tab="reglages">
+          <span class="tab-icon" style="color:${TAB_COLORS.reglages}">${TAB_ICONS.reglages}</span>
+          Réglages
+        </button>
       </div>
       <div id="view"></div>
     </div>
@@ -203,7 +295,8 @@ function render() {
   });
   if (state.tab === "add") renderAdd();
   else if (state.tab === "stats") renderStats();
-  else renderEntretien();
+  else if (state.tab === "entretien") renderEntretien();
+  else renderReglages();
 }
 
 function exportData() {
@@ -883,7 +976,74 @@ function renderEntretien() {
   );
 }
 
+// ---------- Réglages (Supabase cloud sync settings) ----------
+function renderReglages() {
+  const view = document.getElementById("view");
+  const cfg = getSbConfig() || { url: "", key: "", identifiant: "" };
+
+  view.innerHTML = `
+    <div class="view">
+      <div class="card">
+        <p class="reglages-title disp">Sauvegarde cloud (Supabase)</p>
+        <p class="reglages-hint">
+          Configure une fois ces informations pour que tes données soient sauvegardées automatiquement
+          et récupérables même après un effacement des données du téléphone.
+        </p>
+      </div>
+
+      <div class="card">
+        <label>URL du projet Supabase</label>
+        <input type="text" id="__sbUrl" placeholder="https://xxxxx.supabase.co" value="${escapeHtml(cfg.url)}" autocomplete="off" />
+      </div>
+
+      <div class="card">
+        <label>Clé publique (anon / publishable)</label>
+        <input type="text" id="__sbKey" placeholder="sb_publishable_... ou eyJ..." value="${escapeHtml(cfg.key)}" autocomplete="off" />
+      </div>
+
+      <div class="card">
+        <label>Identifiant personnel (à retenir !)</label>
+        <input type="text" id="__sbId" placeholder="Ex: nejib2026" value="${escapeHtml(cfg.identifiant)}" autocomplete="off" />
+        <p class="reglages-hint">Choisis un mot que toi seul connais et note-le en sécurité. Il sert à retrouver tes données.</p>
+      </div>
+
+      <button class="save-btn ready" id="__sbSaveConfig" style="background:${TAB_COLORS.reglages};color:#12211F">
+        Enregistrer les réglages
+      </button>
+
+      <div class="row2" style="margin-top:4px">
+        <button class="month-btn sync-btn" id="__sbPush">↑ Sauvegarder maintenant</button>
+        <button class="month-btn sync-btn" id="__sbPull">↓ Récupérer depuis le cloud</button>
+      </div>
+
+      ${syncStatus ? `<p class="reglages-status">${escapeHtml(syncStatus)}</p>` : ""}
+    </div>
+  `;
+
+  document.getElementById("__sbSaveConfig").addEventListener("click", () => {
+    const url = document.getElementById("__sbUrl").value.trim();
+    const key = document.getElementById("__sbKey").value.trim();
+    const identifiant = document.getElementById("__sbId").value.trim();
+    if (!url || !key || !identifiant) {
+      alert("Remplis les 3 champs (URL, clé, identifiant) avant d'enregistrer.");
+      return;
+    }
+    saveSbConfig({ url, key, identifiant });
+    syncStatus = "Réglages enregistrés ✓";
+    renderReglages();
+  });
+  document.getElementById("__sbPush").addEventListener("click", () => pushToSupabase(false));
+  document.getElementById("__sbPull").addEventListener("click", () => pullFromSupabase(false));
+}
+
 render();
+
+// If this device has no local data yet (fresh install, or data was cleared)
+// but Supabase credentials are already saved, try to silently restore
+// the last cloud backup automatically.
+if (entries.length === 0 && entretiens.length === 0 && getSbConfig()) {
+  pullFromSupabase(true);
+}
 
 // ---------- Service worker registration ----------
 if ("serviceWorker" in navigator) {
