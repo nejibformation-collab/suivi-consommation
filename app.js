@@ -183,6 +183,23 @@ function pushToSupabase(auto) {
     });
 }
 
+function testSbConnection() {
+  const cfg = getSbConfig();
+  if (!cfg || !cfg.url || !cfg.key) {
+    alert("Configure et enregistre d'abord tes réglages.");
+    return;
+  }
+  const url = `${cfg.url.replace(/\/$/, "")}/rest/v1/consumption_data?select=identifiant&limit=1`;
+  fetch(url, { headers: { apikey: cfg.key, Authorization: `Bearer ${cfg.key}` } })
+    .then(async (res) => {
+      const txt = await res.text();
+      alert(`Statut HTTP: ${res.status}\n\nRéponse:\n${txt}`);
+    })
+    .catch((err) => {
+      alert(`Erreur réseau (${err.name}):\n${err.message}\n\nURL testée:\n${url}`);
+    });
+}
+
 function pullFromSupabase(silent) {
   const cfg = getSbConfig();
   if (!cfg || !cfg.url || !cfg.key || !cfg.identifiant) {
@@ -1016,6 +1033,8 @@ function renderReglages() {
         <button class="month-btn sync-btn" id="__sbPull">↓ Récupérer depuis le cloud</button>
       </div>
 
+      <button class="month-btn sync-btn" id="__sbTest" style="width:100%">🔍 Tester la connexion (diagnostic)</button>
+
       ${syncStatus ? `<p class="reglages-status">${escapeHtml(syncStatus)}</p>` : ""}
     </div>
   `;
@@ -1034,6 +1053,7 @@ function renderReglages() {
   });
   document.getElementById("__sbPush").addEventListener("click", () => pushToSupabase(false));
   document.getElementById("__sbPull").addEventListener("click", () => pullFromSupabase(false));
+  document.getElementById("__sbTest").addEventListener("click", testSbConnection);
 }
 
 render();
